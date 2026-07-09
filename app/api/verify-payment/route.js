@@ -7,7 +7,6 @@ export const dynamic = "force-dynamic";
 
 export async function POST(req) {
   try {
-    validateEnv();
     const {
       razorpay_order_id,
       razorpay_payment_id,

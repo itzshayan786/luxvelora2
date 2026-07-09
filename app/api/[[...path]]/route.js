@@ -166,7 +166,6 @@ export function cleanDoc(doc) {
 
 export async function GET(request, { params }) {
   try {
-    validateEnv()
     const database = await getDb()
     const url = new URL(request.url)
     const path = (await params).path || []
@@ -271,7 +270,6 @@ export async function GET(request, { params }) {
 
 export async function POST(request, { params }) {
   try {
-    validateEnv()
     const database = await getDb()
     const path = (await params).path || []
     const route = path[0] || ''
@@ -410,34 +408,40 @@ STYLE: Answer product/order questions crisply. If asked about specific styling, 
 
 Keep responses under 100 words unless the user asks for detail.`
 
+      const isGeminiConfigured = !!(process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim() !== "");
       let reply = null
-      try {
-        const ai = getGemini()
-        const contents = [
-          ...history.map(m => ({
-            role: m.role === 'assistant' ? 'model' : 'user',
-            parts: [{ text: m.content }]
-          })),
-          { role: 'user', parts: [{ text: message }] }
-        ]
 
-        const response = await ai.models.generateContent({
-          model: "gemini-3.5-flash",
-          contents: contents,
-          config: {
-            systemInstruction: systemPrompt,
-            temperature: 0.7,
-          }
-        })
-        reply = response.text
-      } catch (e) {
-        console.error("Gemini failed, falling back to rule-based:", e)
+      if (isGeminiConfigured) {
+        try {
+          const ai = getGemini()
+          const contents = [
+            ...history.map(m => ({
+              role: m.role === 'assistant' ? 'model' : 'user',
+              parts: [{ text: m.content }]
+            })),
+            { role: 'user', parts: [{ text: message }] }
+          ]
+
+          const response = await ai.models.generateContent({
+            model: "gemini-3.5-flash",
+            contents: contents,
+            config: {
+              systemInstruction: systemPrompt,
+              temperature: 0.7,
+            }
+          })
+          reply = response.text
+        } catch (e) {
+          console.error("Gemini failed, falling back to rule-based:", e)
+        }
+      } else {
+        console.warn("AI Chat Concierge running in offline mode because GEMINI_API_KEY is missing.");
       }
 
       // Fallback: intelligent rule-based support
       if (!reply) {
         const m = message.toLowerCase()
-        if (/hello|hi|hey|namaste/.test(m)) reply = "Welcome to Velora ✨ I'm your AI fashion concierge. I can help with product recommendations, sizing, orders, returns and shipping. What would you like to explore today?"
+        if (/hello|hi|hey|namaste/.test(m)) reply = `Welcome to Velora ✨ I'm your AI fashion concierge.${!isGeminiConfigured ? " (Note: Advanced Gemini AI features are currently in standard backup mode.)" : ""} I can help with product recommendations, sizing, orders, returns and shipping. What would you like to explore today?`
         else if (/size|fit|measurement/.test(m)) reply = "Velora silhouettes run oversized — if you prefer a fitted look, size down. Our chest measurements (inches): S 44, M 46, L 48, XL 50, XXL 52. Full size chart is on every product page. Which product are you sizing for?"
         else if (/deliver|shipping|when|arrive/.test(m)) reply = "Standard delivery is 3–7 business days pan-India. Metros usually receive in 2–4 days. Shipping is FREE above ₹1499 · ₹99 below. Share your pincode on any product page for exact ETA."
         else if (/return|refund|exchange/.test(m)) reply = "Easy 15-day returns from delivery date. Items must be unused with tags. Instant refund on prepaid orders, 3–5 days for COD refunds. Just email hello@velora.in with your order ID to initiate."
@@ -451,7 +455,13 @@ Keep responses under 100 words unless the user asks for detail.`
         else if (/payment|upi|razorpay/.test(m)) reply = "We accept UPI (PhonePe/GPay/Paytm), all major cards, Netbanking, wallets and Cash on Delivery. All payments are secured with 256-bit SSL encryption."
         else if (/gift|card|wrap/.test(m)) reply = "We offer premium gift wrapping with a handwritten note — just mention it at checkout in the notes. Digital gift cards from ₹500 to ₹25,000 are also available (coming soon to your account)."
         else if (/thank|thanks|great|awesome|good/.test(m)) reply = "You're welcome ✨ Wearing the future starts with your next drop. Anything else I can help with?"
-        else reply = `Great question. Here's what I know: Velora offers premium Indian luxury fashion with pan-India shipping, 15-day returns, and multiple payment options including UPI and COD. Could you share a bit more about what you're looking for — sizing help, a specific product category, or order support?`
+        else {
+          if (!isGeminiConfigured) {
+            reply = "I am Velora's fashion concierge. Currently, my advanced AI features are offline (GEMINI_API_KEY is not configured), but I am operating in standard helper mode. Velora offers premium Indian luxury fashion with free shipping above ₹1499, easy 15-day returns, and secure payment options. Please ask me about sizing, shipping, returns, payment, or specific styles like hoodies or dresses!"
+          } else {
+            reply = `Great question. Here's what I know: Velora offers premium Indian luxury fashion with pan-India shipping, 15-day returns, and multiple payment options including UPI and COD. Could you share a bit more about what you're looking for — sizing help, a specific product category, or order support?`
+          }
+        }
       }
 
       // Save conversation
