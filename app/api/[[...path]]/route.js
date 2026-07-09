@@ -222,32 +222,6 @@ export async function GET(request, { params }) {
       return NextResponse.json({ order: cleanDoc(order) })
     }
 
-    if (route === 'payment' && path[1]) {
-      const txnId = path[1]
-      const p = await database.collection('payments').findOne({ txnId })
-      if (!p) return NextResponse.json({ error: 'Payment not found' }, { status: 404 })
-      let status = p.status
-      const elapsed = Date.now() - p.createdAt
-      // Demo auto-success: 30% chance after 15s, guaranteed after 25s. Simulates a real webhook.
-      if (status === 'pending') {
-        if (elapsed > 25000) {
-          const utr = 'AUTO' + Math.random().toString(36).slice(2, 10).toUpperCase()
-          await database.collection('payments').updateOne({ txnId }, { $set: { status: 'success', utr, confirmedAt: Date.now(), confirmedBy: 'auto' } })
-          status = 'success'
-          p.utr = utr
-        } else if (elapsed > 15000 && Math.random() < 0.35) {
-          const utr = 'AUTO' + Math.random().toString(36).slice(2, 10).toUpperCase()
-          await database.collection('payments').updateOne({ txnId }, { $set: { status: 'success', utr, confirmedAt: Date.now(), confirmedBy: 'auto' } })
-          status = 'success'
-          p.utr = utr
-        } else if (Date.now() > p.expiresAt) {
-          await database.collection('payments').updateOne({ txnId }, { $set: { status: 'expired' } })
-          status = 'expired'
-        }
-      }
-      return NextResponse.json({ txnId, status, amount: p.amount, upiId: p.upiId, utr: p.utr, elapsed, expiresAt: p.expiresAt })
-    }
-
     if (route === 'pincode' && path[1]) {
       const pin = path[1]
       // Simple demo pincode logic
@@ -333,37 +307,6 @@ export async function POST(request, { params }) {
       if (subtotal < c.min) return NextResponse.json({ error: `Add ₹${c.min - subtotal} more to use this` }, { status: 400 })
       const discount = c.type === 'pct' ? Math.round(subtotal * c.value / 100) : c.value
       return NextResponse.json({ code: code.toUpperCase(), discount, label: c.label })
-    }
-
-    if (route === 'payment' && path[1] === 'intent') {
-      // Create a new UPI payment intent
-      const { amount, orderDraft } = body
-      if (!amount || amount <= 0) return NextResponse.json({ error: 'Invalid amount' }, { status: 400 })
-      const txnId = 'VELPAY' + Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2, 6).toUpperCase()
-      const intent = {
-        txnId,
-        amount,
-        upiId: '7001568884@mbk',
-        payeeName: 'Velora Fashion House',
-        status: 'pending', // pending | success | failed | expired
-        utr: null,
-        orderDraft: orderDraft || null,
-        createdAt: Date.now(),
-        expiresAt: Date.now() + 10 * 60 * 1000, // 10 minutes
-      }
-      await database.collection('payments').insertOne(intent)
-      return NextResponse.json({ txnId, amount: intent.amount, upiId: intent.upiId, payeeName: intent.payeeName, expiresAt: intent.expiresAt })
-    }
-
-    if (route === 'payment' && path[1] === 'confirm' && path[2]) {
-      // User manually confirms with UTR
-      const utr = (body.utr || '').trim()
-      if (!utr || utr.length < 6) return NextResponse.json({ error: 'Enter a valid UTR / reference (min 6 chars)' }, { status: 400 })
-      const p = await database.collection('payments').findOne({ txnId: path[2] })
-      if (!p) return NextResponse.json({ error: 'Payment not found' }, { status: 404 })
-      if (p.status === 'success') return NextResponse.json({ status: 'success', utr: p.utr })
-      await database.collection('payments').updateOne({ txnId: path[2] }, { $set: { status: 'success', utr, confirmedAt: Date.now(), confirmedBy: 'user' } })
-      return NextResponse.json({ status: 'success', utr })
     }
 
     if (route === 'review') {
