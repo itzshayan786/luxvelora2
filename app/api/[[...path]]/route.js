@@ -216,6 +216,13 @@ export async function GET(request, { params }) {
       return NextResponse.json({ orders: orders.map(cleanDoc) })
     }
 
+    if (route === 'user-cart') {
+      const email = url.searchParams.get('email')
+      if (!email) return NextResponse.json({ error: 'Email required' }, { status: 400 })
+      const cartDoc = await database.collection('carts').findOne({ email })
+      return NextResponse.json({ cart: cartDoc ? cartDoc.cart : [] })
+    }
+
     if (route === 'order' && path[1]) {
       const order = await database.collection('orders').findOne({ id: path[1] })
       if (!order) return NextResponse.json({ error: 'Order not found' }, { status: 404 })
@@ -266,6 +273,31 @@ export async function POST(request, { params }) {
       return NextResponse.json({ user: { id: user.id, email: user.email, name: user.name, rewards: user.rewards || 0, wallet: user.wallet || 0 } })
     }
 
+    if (route === 'reset-password') {
+      const { email, password } = body
+      if (!email || !password) return NextResponse.json({ error: 'Email and password required' }, { status: 400 })
+      const result = await database.collection('users').updateOne({ email }, { $set: { password } })
+      if (result.matchedCount === 0) return NextResponse.json({ error: 'User not found' }, { status: 404 })
+      return NextResponse.json({ ok: true })
+    }
+
+    if (route === 'update-profile') {
+      const { email, name, phone, dob, newPassword } = body
+      if (!email) return NextResponse.json({ error: 'Email required' }, { status: 400 })
+      const updateFields = { name, phone, dob }
+      if (newPassword) updateFields.password = newPassword
+      const result = await database.collection('users').updateOne({ email }, { $set: updateFields })
+      if (result.matchedCount === 0) return NextResponse.json({ error: 'User not found' }, { status: 404 })
+      return NextResponse.json({ ok: true })
+    }
+
+    if (route === 'user-cart') {
+      const { email, cart } = body
+      if (!email) return NextResponse.json({ error: 'Email required' }, { status: 400 })
+      await database.collection('carts').updateOne({ email }, { $set: { cart } }, { upsert: true })
+      return NextResponse.json({ ok: true })
+    }
+
     if (route === 'newsletter') {
       const { email } = body
       if (!email) return NextResponse.json({ error: 'Email required' }, { status: 400 })
@@ -301,6 +333,9 @@ export async function POST(request, { params }) {
         'FUTURE20': { type: 'pct', value: 20, min: 2000, label: '20% off (min ₹2000)' },
         'FLAT500': { type: 'flat', value: 500, min: 3000, label: '₹500 off (min ₹3000)' },
         'FIRST15': { type: 'pct', value: 15, min: 1500, label: '15% off first order' },
+        'VELORA_RUNWAY_15': { type: 'pct', value: 15, min: 0, label: '15% Runway Stylist Discount' },
+        'COUTURE_SHIPPING': { type: 'flat', value: 99, min: 0, label: 'Stylist Free Shipping Reward' },
+        'VELORA_MYSTERY': { type: 'flat', value: 350, min: 1499, label: 'Couturier Mystery Gift (₹350 off)' },
       }
       const c = codes[code?.toUpperCase()]
       if (!c) return NextResponse.json({ error: 'Invalid coupon' }, { status: 400 })

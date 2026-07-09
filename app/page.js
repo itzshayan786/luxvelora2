@@ -1,5 +1,7 @@
 'use client'
 import { loadRazorpay, openRazorpayCheckout } from "@/lib/razorpay";
+import PremiumAuth from "@/components/PremiumAuth";
+import PremiumAccount from "@/components/PremiumAccount";
 import { useState, useEffect, useMemo, useRef, createContext, useContext } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Button } from '@/components/ui/button'
@@ -48,8 +50,9 @@ const TopBar = () => (
 )
 
 const Header = () => {
-  const { setRoute, cart, wishlist, user, setSearchOpen, setMobileNavOpen, mobileNavOpen } = useShop()
+  const { setRoute, cart, wishlist, user, setUser, setSearchOpen, setMobileNavOpen, mobileNavOpen, isOffline } = useShop()
   const [scrolled, setScrolled] = useState(false)
+  const [showDropdown, setShowDropdown] = useState(false)
   useEffect(() => {
     const h = () => setScrolled(window.scrollY > 20)
     window.addEventListener('scroll', h); return () => window.removeEventListener('scroll', h)
@@ -78,8 +81,145 @@ const Header = () => {
             ))}
           </nav>
           <div className="flex items-center gap-1 md:gap-2">
+            {/* Connectivity Indicator */}
+            <div className="relative group mr-1">
+              <div
+                className={`w-10 h-10 flex items-center justify-center rounded-full transition relative ${
+                  isOffline ? 'bg-amber-500/5' : 'bg-emerald-500/5'
+                }`}
+              >
+                <div className="w-2.5 h-2.5 rounded-full relative">
+                  <span className={`absolute inset-0 rounded-full animate-ping ${isOffline ? 'bg-amber-500' : 'bg-emerald-500'}`} />
+                  <span className={`absolute inset-0 rounded-full ${isOffline ? 'bg-amber-500' : 'bg-emerald-500'}`} />
+                </div>
+              </div>
+              
+              {/* Tooltip */}
+              <div className="absolute right-0 top-12 scale-0 group-hover:scale-100 transition-all origin-top-right z-50 bg-neutral-900 text-white text-[10px] uppercase font-bold tracking-widest py-2 px-3 rounded-xl border border-white/10 shadow-xl whitespace-nowrap pointer-events-none">
+                {isOffline ? (
+                  <span className="flex items-center gap-1.5 text-amber-400">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" /> Offline Mode
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1.5 text-emerald-400">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" /> Secure & Connected
+                  </span>
+                )}
+              </div>
+            </div>
+
             <button onClick={() => setSearchOpen(true)} className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-black/[0.02] transition"><Search className="w-5 h-5" /></button>
-            <button onClick={() => setRoute({ view: user ? 'account' : 'auth' })} className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-black/[0.02] transition"><User className="w-5 h-5" /></button>
+            
+            {/* Profile Dropdown Container */}
+            <div 
+              className="relative"
+              onMouseEnter={() => setShowDropdown(true)}
+              onMouseLeave={() => setShowDropdown(false)}
+            >
+              <button onClick={() => setRoute({ view: user ? 'account' : 'auth' })} className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-black/[0.02] transition"><User className="w-5 h-5" /></button>
+              
+              <AnimatePresence>
+                {showDropdown && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10, scale: 0.98 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 10, scale: 0.98 }}
+                    className="absolute right-0 top-10 w-64 bg-white border border-neutral-100 shadow-xl shadow-black/5 rounded-none p-5 z-50 origin-top-right text-left"
+                  >
+                    {user ? (
+                      <div className="space-y-4">
+                        <div className="border-b border-neutral-100 pb-3">
+                          <p className="text-[9px] tracking-widest text-neutral-400 font-bold uppercase">SECURE DOSSIER</p>
+                          <p className="text-xs font-semibold text-neutral-900 uppercase truncate mt-0.5">{user.name}</p>
+                          <p className="text-[9px] font-mono text-neutral-400 truncate mt-0.5">{user.email}</p>
+                        </div>
+                        
+                        <div className="flex flex-col gap-2.5">
+                          {[
+                            { label: 'CLIENT ARCHIVES (ORDERS)', view: 'account' },
+                            { label: 'CURATED LOOKS (WISHLIST)', view: 'account' },
+                            { label: 'IDENTITY PROFILE', view: 'account' },
+                            { label: 'ADDRESS PORTFOLIO', view: 'account' },
+                            { label: 'BILLING INSTRUMENTS', view: 'account' },
+                            { label: 'SIGNAL PREFERENCES', view: 'account' }
+                          ].map(item => (
+                            <button
+                              key={item.label}
+                              onClick={() => {
+                                setRoute({ view: item.view })
+                                setShowDropdown(false)
+                              }}
+                              className="text-[10px] tracking-[0.12em] font-medium text-neutral-500 hover:text-neutral-950 text-left transition-colors"
+                            >
+                              {item.label}
+                            </button>
+                          ))}
+                        </div>
+                        
+                        <div className="border-t border-neutral-100 pt-3">
+                          <button
+                            onClick={() => {
+                              localStorage.removeItem('velora_user')
+                              setUser(null)
+                              setRoute({ view: 'home' })
+                              setShowDropdown(false)
+                              toast.success('Secure session terminated successfully')
+                            }}
+                            className="w-full text-left text-[10px] tracking-widest text-red-500 font-semibold uppercase hover:text-red-700 transition"
+                          >
+                            LOGOUT SESSION
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        <div className="border-b border-neutral-100 pb-3">
+                          <p className="text-[9px] tracking-widest text-neutral-400 font-bold uppercase">GUEST IDENTITY</p>
+                          <p className="text-xs font-semibold text-neutral-800 uppercase mt-0.5 font-display">Welcome to Velora</p>
+                        </div>
+                        
+                        <div className="flex flex-col gap-3">
+                          <Button
+                            onClick={() => {
+                              setRoute({ view: 'auth' })
+                              setShowDropdown(false)
+                            }}
+                            className="w-full h-9 rounded-none bg-neutral-950 text-white hover:bg-neutral-800 text-[10px] tracking-widest uppercase font-semibold"
+                          >
+                            SIGN IN
+                          </Button>
+                          <button
+                            onClick={() => {
+                              setRoute({ view: 'auth' })
+                              setShowDropdown(false)
+                            }}
+                            className="text-center text-[10px] tracking-widest uppercase font-semibold text-neutral-500 hover:text-neutral-900 transition mt-1"
+                          >
+                            CREATE AN ACCOUNT
+                          </button>
+                        </div>
+                        
+                        <div className="border-t border-neutral-100 pt-3 flex flex-col gap-2">
+                          <button
+                            onClick={() => { setRoute({ view: 'track-order' }); setShowDropdown(false) }}
+                            className="text-[10px] tracking-widest uppercase font-semibold text-neutral-500 hover:text-neutral-950 text-left transition"
+                          >
+                            TRACK ORDER
+                          </button>
+                          <button
+                            onClick={() => { setRoute({ view: 'contact' }); setShowDropdown(false) }}
+                            className="text-[10px] tracking-widest uppercase font-semibold text-neutral-500 hover:text-neutral-950 text-left transition"
+                          >
+                            SUPPORT CHANNELS
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+
             <button onClick={() => setRoute({ view: 'wishlist' })} className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-black/[0.02] transition relative">
               <Heart className="w-5 h-5" />
               {wishlist.length > 0 && <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 rounded-full bg-blue-500 text-[10px] font-bold flex items-center justify-center">{wishlist.length}</span>}
@@ -575,7 +715,7 @@ const ShopPage = () => {
 }
 
 const ProductPage = () => {
-  const { route, setRoute, addToCart, toggleWishlist, wishlist } = useShop()
+  const { route, setRoute, addToCart, toggleWishlist, wishlist, addRecentlyViewed } = useShop()
   const [product, setProduct] = useState(null)
   const [related, setRelated] = useState([])
   const [imgIdx, setImgIdx] = useState(0)
@@ -584,11 +724,31 @@ const ProductPage = () => {
   const [pin, setPin] = useState(''); const [pinRes, setPinRes] = useState(null)
 
   useEffect(() => {
-    fetch(`/api/product/${route.id}`).then(r => r.json()).then(d => {
-      setProduct(d.product); setRelated(d.related || [])
-      setSize(d.product?.sizes[0] || ''); setColor(d.product?.colors[0] || ''); setImgIdx(0)
-      window.scrollTo(0, 0)
-    })
+    fetch(`/api/product/${route.id}`)
+      .then(r => r.json())
+      .then(d => {
+        setProduct(d.product); setRelated(d.related || [])
+        setSize(d.product?.sizes[0] || ''); setColor(d.product?.colors[0] || ''); setImgIdx(0)
+        window.scrollTo(0, 0)
+        if (d.product) {
+          addRecentlyViewed(d.product)
+        }
+      })
+      .catch(err => {
+        console.error("Fetch product failed, looking in cache", err)
+        try {
+          const cachedProds = JSON.parse(localStorage.getItem('velora_products_cache') || '[]')
+          const localProd = cachedProds.find(x => x.id === route.id)
+          if (localProd) {
+            setProduct(localProd)
+            setRelated(cachedProds.filter(x => x.category === localProd.category && x.id !== localProd.id).slice(0, 4))
+            setSize(localProd.sizes[0] || '')
+            setColor(localProd.colors[0] || '')
+            setImgIdx(0)
+            addRecentlyViewed(localProd)
+          }
+        } catch(e) {}
+      })
   }, [route.id])
 
   if (!product) return <div className="h-screen flex items-center justify-center"><div className="w-12 h-12 border-2 border-blue-500 border-t-transparent rounded-full spin-slow" /></div>
@@ -917,11 +1077,82 @@ const CheckoutPage = () => {
 
   const [pincodeLoading, setPincodeLoading] = useState(false)
   const [pincodeMessage, setPincodeMessage] = useState('')
-  const [coupon, setCoupon] = useState('')
+  const [coupon, setCoupon] = useState(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        return localStorage.getItem('velora_offline_reward_coupon') || ''
+      }
+    } catch(e) {}
+    return ''
+  })
   const [applied, setApplied] = useState(null)
   const [payment, setPayment] = useState('razorpay')
   const [placing, setPlacing] = useState(false)
   const [successOrder, setSuccessOrder] = useState(null)
+
+  // Memoized checkout pricing
+  const subtotal = useMemo(() => {
+    return cart.reduce((s, i) => s + i.price * i.qty, 0)
+  }, [cart])
+
+  const shipping = useMemo(() => {
+    return subtotal > 1499 ? 0 : 99
+  }, [subtotal])
+
+  const discount = useMemo(() => {
+    return applied?.discount || 0
+  }, [applied])
+
+  const total = useMemo(() => {
+    return subtotal + shipping - discount
+  }, [subtotal, shipping, discount])
+
+  const activeAddress = useMemo(() => {
+    if (selectedAddressId === 'new') {
+      return form
+    }
+    return addresses.find(a => a.id === selectedAddressId) || form
+  }, [selectedAddressId, addresses, form])
+
+  const canProceed = useMemo(() => {
+    if (step === 1) {
+      return (
+        activeAddress.name &&
+        activeAddress.email &&
+        activeAddress.phone &&
+        activeAddress.phone.length >= 10 &&
+        activeAddress.line1 &&
+        activeAddress.city &&
+        activeAddress.state &&
+        activeAddress.pincode &&
+        activeAddress.pincode.length === 6
+      )
+    }
+    return true
+  }, [step, activeAddress])
+
+  // Automatically apply offline reward coupon on mount / reconnection
+  useEffect(() => {
+    if (coupon && !applied) {
+      const autoApply = async () => {
+        try {
+          const r = await fetch('/api/coupon', { 
+            method: 'POST', 
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ code: coupon, subtotal }) 
+          }).then(x => x.json())
+          
+          if (!r.error) {
+            setApplied(r)
+            toast.success(`✨ Runway Reward Applied: ${r.label}!`)
+          }
+        } catch (e) {
+          console.log("Awaiting connection to validate Stylist Reward...", e)
+        }
+      }
+      autoApply()
+    }
+  }, [coupon, applied, subtotal])
 
   // Auto-fill City & State on 6-digit Pincode input
   useEffect(() => {
@@ -957,18 +1188,6 @@ const CheckoutPage = () => {
       setPincodeMessage('')
     }
   }, [form.pincode])
-
-  const activeAddress = useMemo(() => {
-    if (selectedAddressId === 'new') {
-      return form
-    }
-    return addresses.find(a => a.id === selectedAddressId) || form
-  }, [selectedAddressId, addresses, form])
-
-  const subtotal = cart.reduce((s, i) => s + i.price * i.qty, 0)
-  const shipping = subtotal > 1499 ? 0 : 99
-  const discount = applied?.discount || 0
-  const total = subtotal + shipping - discount
 
   const applyCoupon = async () => {
     const r = await fetch('/api/coupon', { method: 'POST', body: JSON.stringify({ code: coupon, subtotal }) }).then(x => x.json())
@@ -1128,27 +1347,13 @@ const CheckoutPage = () => {
   };
 
   useEffect(() => { if (cart.length === 0 && !successOrder) setRoute({ view: 'cart' }) }, [cart, successOrder])
-  if (cart.length === 0 && !successOrder) return null
 
-  const canProceed = useMemo(() => {
-    if (step === 1) {
-      return (
-        activeAddress.name &&
-        activeAddress.email &&
-        activeAddress.phone &&
-        activeAddress.phone.length >= 10 &&
-        activeAddress.line1 &&
-        activeAddress.city &&
-        activeAddress.state &&
-        activeAddress.pincode &&
-        activeAddress.pincode.length === 6
-      )
-    }
-    return true
-  }, [step, activeAddress])
+  const shouldRender = cart.length > 0 || successOrder;
 
   return (
-    <div className="pt-8 pb-24 px-4 md:px-12 max-w-[1500px] mx-auto">
+    <>
+      {!shouldRender ? null : (
+        <div className="pt-8 pb-24 px-4 md:px-12 max-w-[1500px] mx-auto">
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 pb-6 border-b border-black/5">
         <div>
@@ -1716,34 +1921,40 @@ const CheckoutPage = () => {
       )}
 
       <PaymentSuccessDialog order={successOrder} onClose={() => setSuccessOrder(null)} />
-    </div>
+        </div>
+      )}
+    </>
   )
 }
 
 const OrderSuccessPage = () => {
   const { route, setRoute } = useShop()
   const order = route.order
-  if (!order) return null
+  const shouldRender = !!order
   return (
-    <div className="min-h-[80vh] flex items-center justify-center px-6 py-16">
-      <div className="max-w-2xl w-full">
-        <motion.div initial={{ scale: 0.5, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ type: 'spring', duration: 0.7 }} className="w-24 h-24 rounded-full bg-blue-500/20 border-2 border-blue-400 flex items-center justify-center mx-auto mb-6 pulse-glow">
-          <Check className="w-12 h-12 text-blue-400" />
-        </motion.div>
-        <h1 className="text-huge font-display font-bold silver-text text-center mb-3">Order Confirmed</h1>
-        <p className="text-neutral-600 text-center mb-8">Your future is on its way. Confirmation sent to <b className="text-neutral-900">{order.email}</b></p>
-        <div className="glass rounded-2xl p-6 border border-black/10 space-y-4">
-          <div className="flex justify-between"><span className="text-neutral-600">Order ID</span><span className="font-mono text-blue-400">{order.id}</span></div>
-          <div className="flex justify-between"><span className="text-neutral-600">Amount</span><span className="font-bold">{fmt(order.total)}</span></div>
-          <div className="flex justify-between"><span className="text-neutral-600">Payment</span><span>{order.payment?.toUpperCase()}</span></div>
-          <div className="flex justify-between"><span className="text-neutral-600">Estimated Delivery</span><span>{new Date(order.estimatedDelivery).toLocaleDateString('en-IN', { day: 'numeric', month: 'long' })}</span></div>
+    <>
+      {!shouldRender ? null : (
+        <div className="min-h-[80vh] flex items-center justify-center px-6 py-16">
+          <div className="max-w-2xl w-full">
+            <motion.div initial={{ scale: 0.5, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ type: 'spring', duration: 0.7 }} className="w-24 h-24 rounded-full bg-blue-500/20 border-2 border-blue-400 flex items-center justify-center mx-auto mb-6 pulse-glow">
+              <Check className="w-12 h-12 text-blue-400" />
+            </motion.div>
+            <h1 className="text-huge font-display font-bold silver-text text-center mb-3">Order Confirmed</h1>
+            <p className="text-neutral-600 text-center mb-8">Your future is on its way. Confirmation sent to <b className="text-neutral-900">{order.email}</b></p>
+            <div className="glass rounded-2xl p-6 border border-black/10 space-y-4">
+              <div className="flex justify-between"><span className="text-neutral-600">Order ID</span><span className="font-mono text-blue-400">{order.id}</span></div>
+              <div className="flex justify-between"><span className="text-neutral-600">Amount</span><span className="font-bold">{fmt(order.total)}</span></div>
+              <div className="flex justify-between"><span className="text-neutral-600">Payment</span><span>{order.payment?.toUpperCase()}</span></div>
+              <div className="flex justify-between"><span className="text-neutral-600">Estimated Delivery</span><span>{new Date(order.estimatedDelivery).toLocaleDateString('en-IN', { day: 'numeric', month: 'long' })}</span></div>
+            </div>
+            <div className="flex flex-wrap gap-3 mt-8">
+              <Button onClick={() => setRoute({ view: 'track-order', orderId: order.id })} className="flex-1 rounded-full bg-neutral-900 text-white hover:bg-blue-600 hover:text-white h-12">Track Order</Button>
+              <Button onClick={() => setRoute({ view: 'home' })} variant="outline" className="flex-1 rounded-full border-black/15 h-12">Continue Shopping</Button>
+            </div>
+          </div>
         </div>
-        <div className="flex flex-wrap gap-3 mt-8">
-          <Button onClick={() => setRoute({ view: 'track-order', orderId: order.id })} className="flex-1 rounded-full bg-neutral-900 text-white hover:bg-blue-600 hover:text-white h-12">Track Order</Button>
-          <Button onClick={() => setRoute({ view: 'home' })} variant="outline" className="flex-1 rounded-full border-black/15 h-12">Continue Shopping</Button>
-        </div>
-      </div>
-    </div>
+      )}
+    </>
   )
 }
 
@@ -1794,95 +2005,11 @@ const TrackOrderPage = () => {
 }
 
 const AuthPage = () => {
-  const { setUser, setRoute } = useShop()
-  const [mode, setMode] = useState('login')
-  const [f, setF] = useState({ email: '', password: '', name: '' })
-  const submit = async () => {
-    const r = await fetch(`/api/${mode}`, { method: 'POST', body: JSON.stringify(f) }).then(x => x.json())
-    if (r.error) return toast.error(r.error)
-    localStorage.setItem('velora_user', JSON.stringify(r.user))
-    setUser(r.user); toast.success(`Welcome ${mode === 'login' ? 'back' : 'to Velora'}, ${r.user.name}`); setRoute({ view: 'account' })
-  }
-  return (
-    <div className="min-h-[80vh] flex items-center justify-center px-6 py-16">
-      <div className="max-w-md w-full glass rounded-3xl p-8 border border-black/10">
-        <VeloraLogo size="lg" />
-        <h1 className="text-3xl font-display font-bold mt-6 mb-2">{mode === 'login' ? 'Welcome back' : 'Join the future'}</h1>
-        <p className="text-neutral-500 mb-6">{mode === 'login' ? 'Sign in to your account' : 'Get 100 reward points on signup'}</p>
-        <div className="space-y-3">
-          {mode === 'register' && <Input placeholder="Full name" value={f.name} onChange={e => setF({ ...f, name: e.target.value })} className="bg-black/[0.02] border-black/10 h-12" />}
-          <Input placeholder="Email" type="email" value={f.email} onChange={e => setF({ ...f, email: e.target.value })} className="bg-black/[0.02] border-black/10 h-12" />
-          <Input placeholder="Password" type="password" value={f.password} onChange={e => setF({ ...f, password: e.target.value })} className="bg-black/[0.02] border-black/10 h-12" />
-        </div>
-        <Button onClick={submit} className="w-full mt-6 h-12 rounded-full bg-neutral-900 text-white hover:bg-blue-600 hover:text-white">{mode === 'login' ? 'Sign In' : 'Create Account'}</Button>
-        <p className="text-center text-sm mt-6 text-neutral-500">
-          {mode === 'login' ? "Don't have an account?" : 'Already have an account?'}{' '}
-          <button onClick={() => setMode(mode === 'login' ? 'register' : 'login')} className="text-blue-400 hover:underline">{mode === 'login' ? 'Sign up' : 'Sign in'}</button>
-        </p>
-      </div>
-    </div>
-  )
+  return <PremiumAuth useShop={useShop} />
 }
 
 const AccountPage = () => {
-  const { user, setUser, setRoute, wishlist } = useShop()
-  const [orders, setOrders] = useState([])
-  useEffect(() => { if (user?.email) fetch(`/api/orders?email=${user.email}`).then(r => r.json()).then(d => setOrders(d.orders || [])) }, [user])
-  useEffect(() => { if (!user) setRoute({ view: 'auth' }) }, [user])
-  if (!user) return null
-  const logout = () => { localStorage.removeItem('velora_user'); setUser(null); setRoute({ view: 'home' }); toast.success('Signed out') }
-  return (
-    <div className="pt-8 pb-20 px-6 md:px-12 max-w-[1400px] mx-auto">
-      <div className="mb-8">
-        <p className="text-xs tracking-[0.3em] text-blue-400 mb-2">◆ MY ACCOUNT</p>
-        <h1 className="text-huge font-display font-bold silver-text">Hi, {user.name}</h1>
-      </div>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-        {[
-          { i: Package, l: 'Orders', v: orders.length },
-          { i: Heart, l: 'Wishlist', v: wishlist.length },
-          { i: Gift, l: 'Rewards', v: user.rewards },
-          { i: Wallet, l: 'Wallet', v: fmt(user.wallet) },
-        ].map(x => (
-          <div key={x.l} className="glass rounded-2xl p-5 border border-black/10">
-            <x.i className="w-6 h-6 text-blue-400 mb-3" />
-            <p className="text-2xl font-display font-bold silver-text">{x.v}</p>
-            <p className="text-xs text-neutral-500 mt-1">{x.l}</p>
-          </div>
-        ))}
-      </div>
-      <Tabs defaultValue="orders" className="w-full">
-        <TabsList className="glass border border-black/10">
-          <TabsTrigger value="orders">Orders</TabsTrigger>
-          <TabsTrigger value="profile">Profile</TabsTrigger>
-          <TabsTrigger value="addresses">Addresses</TabsTrigger>
-        </TabsList>
-        <TabsContent value="orders" className="mt-6 space-y-4">
-          {orders.length === 0 ? <p className="text-neutral-500 py-8 text-center">No orders yet.</p> : orders.map(o => (
-            <div key={o.id} className="glass rounded-2xl p-5 border border-black/10 flex justify-between items-center">
-              <div>
-                <p className="font-mono text-blue-400 text-sm">{o.id}</p>
-                <p className="text-xs text-neutral-500 mt-1">{new Date(o.createdAt).toLocaleDateString('en-IN')} · {o.items.length} items</p>
-                <p className="font-bold mt-2">{fmt(o.total)}</p>
-              </div>
-              <Button onClick={() => setRoute({ view: 'track-order', orderId: o.id })} variant="outline" className="rounded-full border-black/15">Track</Button>
-            </div>
-          ))}
-        </TabsContent>
-        <TabsContent value="profile" className="mt-6">
-          <div className="glass rounded-2xl p-6 border border-black/10 space-y-4 max-w-xl">
-            <div><label className="text-xs text-neutral-500">Name</label><Input defaultValue={user.name} className="bg-black/[0.02] border-black/10 mt-1" /></div>
-            <div><label className="text-xs text-neutral-500">Email</label><Input defaultValue={user.email} className="bg-black/[0.02] border-black/10 mt-1" disabled /></div>
-            <Button className="rounded-full bg-neutral-900 text-white">Save Changes</Button>
-          </div>
-        </TabsContent>
-        <TabsContent value="addresses" className="mt-6">
-          <div className="glass rounded-2xl p-6 border border-black/10 text-neutral-600">Add addresses at checkout — they'll be saved here.</div>
-        </TabsContent>
-      </Tabs>
-      <Button onClick={logout} variant="outline" className="mt-8 rounded-full border-black/15"><LogOut className="w-4 h-4 mr-2" /> Sign Out</Button>
-    </div>
-  )
+  return <PremiumAccount useShop={useShop} />
 }
 
 const StaticPage = ({ title, subtitle, children }) => (
@@ -2139,6 +2266,107 @@ const AIChatWidget = () => {
   )
 }
 
+const VeloraOfflineShutter = ({ isOpen }) => {
+  const slats = Array.from({ length: 32 })
+
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <motion.div
+          id="velora-storefront-shutter"
+          initial={{ y: '-100%' }}
+          animate={{ y: 0 }}
+          exit={{ y: '-100%' }}
+          transition={{ ease: [0.25, 1, 0.5, 1], duration: 1.2 }}
+          className="fixed inset-0 z-[9999] w-full h-full overflow-hidden flex flex-col justify-center items-center pointer-events-auto bg-[#333538]"
+        >
+          {/* Shutter Slats Background */}
+          <div className="absolute inset-0 w-full h-full flex flex-col pointer-events-none bg-neutral-900">
+            {slats.map((_, i) => (
+              <div
+                key={i}
+                className="h-[3.2vh] w-full relative border-b border-black/45 shadow-[inset_0_1px_0_rgba(255,255,255,0.15)] flex-shrink-0"
+                style={{
+                  background: 'linear-gradient(to bottom, #d2d4d6 0%, #b3b5ba 25%, #9da0a6 50%, #82858b 75%, #6a6c71 100%)',
+                }}
+              >
+                {/* Accent horizontal micro-groove line for extreme realism of a rolled slat */}
+                <div className="absolute top-[40%] left-0 right-0 h-[1px] bg-black/10 border-b border-white/5" />
+                {/* Slat reflection highlight */}
+                <div className="absolute top-[1px] left-0 right-0 h-[1px] bg-white/30" />
+                {/* Slat bottom highlight */}
+                <div className="absolute bottom-[2px] left-0 right-0 h-[1px] bg-white/10" />
+                {/* Slat bottom groove shadow */}
+                <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-black/25" />
+              </div>
+            ))}
+            
+            {/* Ambient brushed metal vertical/horizontal glare overlay */}
+            <div 
+              className="absolute inset-0 bg-gradient-to-r from-transparent via-white/[0.08] to-transparent pointer-events-none mix-blend-overlay"
+              style={{
+                background: 'linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.06) 15%, rgba(255,255,255,0) 30%, rgba(255,255,255,0.1) 45%, rgba(255,255,255,0) 60%, rgba(255,255,255,0.05) 75%, rgba(255,255,255,0.08) 85%, rgba(255,255,255,0) 100%)'
+              }}
+            />
+            
+            {/* Matte finish, fine grain noise overlay */}
+            <div 
+              className="absolute inset-0 pointer-events-none opacity-[0.06] mix-blend-overlay"
+              style={{
+                backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E")`
+              }}
+            />
+            
+            {/* Soft natural shadows/ambient light falloff */}
+            <div className="absolute inset-0 bg-gradient-to-b from-black/15 via-transparent to-black/25 pointer-events-none" />
+          </div>
+
+          {/* Central Stencil Typography Text Layer */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 1.1, duration: 0.6 }}
+            className="relative z-20 text-center select-none px-6 pointer-events-none"
+          >
+            {/* White paint / stencil weathered text */}
+            <div className="relative">
+              {/* Outer soft shadow on the text to give it 3D realism against metal */}
+              <h1 
+                className="text-4xl md:text-6xl font-sans font-bold tracking-[0.25em] text-white/90 uppercase text-shadow-sm select-none"
+                style={{
+                  letterSpacing: '0.3em',
+                  textShadow: '0 2px 4px rgba(0,0,0,0.3)',
+                  filter: 'contrast(1.2)'
+                }}
+              >
+                STORE OFFLINE
+              </h1>
+              
+              <p 
+                className="text-xs md:text-sm font-sans tracking-[0.15em] text-white/70 font-semibold uppercase mt-6 select-none"
+                style={{
+                  letterSpacing: '0.2em',
+                  textShadow: '0 1px 2px rgba(0,0,0,0.3)'
+                }}
+              >
+                Please check your internet connection.
+              </p>
+            </div>
+            
+            {/* Weathering multiply grain applied exclusively over text layer */}
+            <div 
+              className="absolute inset-x-0 -top-8 -bottom-8 pointer-events-none mix-blend-multiply opacity-[0.25]"
+              style={{
+                backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 150 150' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='weatherFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23weatherFilter)'/%3E%3C/svg%3E")`
+              }}
+            />
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  )
+}
+
 const App = () => {
   const [route, setRoute] = useState({ view: 'home' })
   const [products, setProducts] = useState([])
@@ -2148,20 +2376,92 @@ const App = () => {
   const [searchOpen, setSearchOpen] = useState(false)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [loading, setLoading] = useState(true)
-
+ 
+  // Offline support states
+  const [isOffline, setIsOffline] = useState(false)
+  const [shutterOpen, setShutterOpen] = useState(false)
+  const [recentlyViewed, setRecentlyViewed] = useState([])
+ 
   useEffect(() => {
-    fetch('/api/products').then(r => r.json()).then(d => { setProducts(d.products || []); setLoading(false) })
+    if (typeof window !== 'undefined') {
+      const initialOffline = !window.navigator.onLine
+      setIsOffline(initialOffline)
+      if (initialOffline) {
+        setShutterOpen(true)
+      }
+ 
+      let timeoutId = null
+ 
+      const goOnline = () => {
+        if (timeoutId) {
+          clearTimeout(timeoutId)
+          timeoutId = null
+        }
+        setIsOffline(false)
+        setShutterOpen(false)
+      }
+      const goOffline = () => {
+        setIsOffline(true)
+        if (timeoutId) clearTimeout(timeoutId)
+        timeoutId = setTimeout(() => {
+          setShutterOpen(true)
+        }, 300)
+      }
+ 
+      window.addEventListener('online', goOnline)
+      window.addEventListener('offline', goOffline)
+ 
+      // Register Service Worker for PWA
+      if ('serviceWorker' in window.navigator) {
+        window.navigator.serviceWorker.register('/sw.js')
+          .then(reg => console.log('Service Worker registered with scope:', reg.scope))
+          .catch(err => console.error('Service Worker registration failed:', err))
+      }
+ 
+      return () => {
+        window.removeEventListener('online', goOnline)
+        window.removeEventListener('offline', goOffline)
+        if (timeoutId) clearTimeout(timeoutId)
+      }
+    }
+  }, [])
+ 
+  useEffect(() => {
+    // Fetch products with offline fallback
+    fetch('/api/products')
+      .then(r => r.json())
+      .then(d => {
+        const prodList = d.products || []
+        setProducts(prodList)
+        setLoading(false)
+        try {
+          localStorage.setItem('velora_products_cache', JSON.stringify(prodList))
+        } catch (e) {}
+      })
+      .catch(err => {
+        console.error("Fetch products failed, loading from local cache fallback", err)
+        try {
+          const cached = JSON.parse(localStorage.getItem('velora_products_cache') || '[]')
+          if (cached.length > 0) {
+            setProducts(cached)
+          }
+        } catch (e) {}
+        setLoading(false)
+      })
+ 
     try {
       const savedCart = JSON.parse(localStorage.getItem('velora_cart') || '[]')
       const savedWL = JSON.parse(localStorage.getItem('velora_wl') || '[]')
       const savedUser = JSON.parse(localStorage.getItem('velora_user') || 'null')
-      setCart(savedCart); setWishlist(savedWL); setUser(savedUser)
+      const savedRV = JSON.parse(localStorage.getItem('velora_recently_viewed') || '[]')
+      setCart(savedCart); setWishlist(savedWL); setUser(savedUser); setRecentlyViewed(savedRV)
     } catch (e) {}
   }, [])
+ 
   useEffect(() => { try { localStorage.setItem('velora_cart', JSON.stringify(cart)) } catch (e) {} }, [cart])
   useEffect(() => { try { localStorage.setItem('velora_wl', JSON.stringify(wishlist)) } catch (e) {} }, [wishlist])
   useEffect(() => { if (typeof window !== 'undefined') window.scrollTo(0, 0) }, [route])
-
+ 
   const addToCart = (p, size, color, qty = 1) => {
     const key = `${p.id}-${size}-${color}`
     setCart(prev => {
@@ -2171,6 +2471,19 @@ const App = () => {
     })
     toast.success(`Added ${p.name} to bag`)
   }
+ 
+  const addRecentlyViewed = (p) => {
+    if (!p) return
+    setRecentlyViewed(prev => {
+      const filtered = prev.filter(x => x.id !== p.id)
+      const updated = [p, ...filtered].slice(0, 8)
+      try {
+        localStorage.setItem('velora_recently_viewed', JSON.stringify(updated))
+      } catch (e) {}
+      return updated
+    })
+  }
+ 
   const updateCart = (key, qty) => setCart(prev => prev.map(i => i.key === key ? { ...i, qty } : i))
   const removeFromCart = (key) => setCart(prev => prev.filter(i => i.key !== key))
   const clearCart = () => setCart([])
@@ -2180,9 +2493,29 @@ const App = () => {
       toast.success('Added to wishlist'); return [...prev, id]
     })
   }
-
-  const ctx = { route, setRoute, products, cart, addToCart, updateCart, removeFromCart, clearCart, wishlist, toggleWishlist, user, setUser, searchOpen, setSearchOpen, mobileNavOpen, setMobileNavOpen }
-
+ 
+  const ctx = { 
+    route, 
+    setRoute, 
+    products, 
+    cart, 
+    addToCart, 
+    updateCart, 
+    removeFromCart, 
+    clearCart, 
+    wishlist, 
+    toggleWishlist, 
+    user, 
+    setUser, 
+    searchOpen, 
+    setSearchOpen, 
+    mobileNavOpen, 
+    setMobileNavOpen,
+    isOffline,
+    recentlyViewed,
+    addRecentlyViewed
+  }
+ 
   const view = route.view || 'home'
   const pages = {
     home: <HomePage />, shop: <ShopPage />, product: <ProductPage />, cart: <CartPage />, wishlist: <WishlistPage />,
@@ -2191,7 +2524,7 @@ const App = () => {
     faq: <FaqPage />, 'size-guide': <SizeGuidePage />, shipping: <PolicyPage title="Shipping & Returns" />,
     privacy: <PolicyPage title="Privacy Policy" />, terms: <PolicyPage title="Terms & Conditions" />,
   }
-
+ 
   if (loading) return (
     <div className="fixed inset-0 flex flex-col items-center justify-center bg-[#fafaf9]">
       <VeloraLogo size="xl" />
@@ -2199,11 +2532,12 @@ const App = () => {
       <p className="mt-4 text-xs tracking-[0.3em] text-neutral-500">LOADING THE FUTURE</p>
     </div>
   )
-
+ 
   return (
     <ShopCtx.Provider value={ctx}>
-      <div className="min-h-screen bg-[#fafaf9] noise">
+      <div className="min-h-screen bg-[#fafaf9] noise relative">
         <Header />
+        
         <main>
           <AnimatePresence mode="wait">
             <motion.div key={view + JSON.stringify(route.filter || route.id || '')} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.4 }}>
@@ -2211,12 +2545,16 @@ const App = () => {
             </motion.div>
           </AnimatePresence>
         </main>
+        
         <Footer />
         <SearchOverlay />
         <AIChatWidget />
+ 
+        {/* Realistic luxury storefront shutter overlay */}
+        <VeloraOfflineShutter isOpen={shutterOpen} />
       </div>
     </ShopCtx.Provider>
   )
 }
-
+ 
 export default App
