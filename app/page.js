@@ -14,7 +14,7 @@ import {
   Search, ShoppingBag, Heart, User, Menu, X, ChevronRight, ChevronLeft, Star, Truck, Shield,
   RotateCcw, CreditCard, Sparkles, Zap, Package, MapPin, ArrowRight, Plus, Minus, Trash2,
   Instagram, Twitter, Facebook, Youtube, Filter, Check, Mic, Award, Clock, Gift, Wallet, LogOut, ArrowUpRight,
-  MessageCircle, Send, Bot, HelpCircle, Phone, Mail, QrCode, Copy, Smartphone, Loader2, Truck as TruckIcon
+  MessageCircle, Send, Bot, HelpCircle, Phone, Mail, Loader2, Truck as TruckIcon
 } from 'lucide-react'
 
 const ShopCtx = createContext(null)
@@ -869,13 +869,101 @@ const PaymentSuccessDialog = ({ order, onClose }) => {
 }
 
 const CheckoutPage = () => {
-  const { cart, setRoute, clearCart, user } = useShop()
+  const { cart, setRoute, clearCart, user, updateCart, removeFromCart } = useShop()
   const [step, setStep] = useState(1)
-  const [form, setForm] = useState({ name: user?.name || '', email: user?.email || '', phone: '', line1: '', line2: '', city: '', state: '', pincode: '', gst: '' })
-  const [coupon, setCoupon] = useState(''); const [applied, setApplied] = useState(null)
+  
+  // Premium Saved Addresses state
+  const [addresses, setAddresses] = useState([
+    {
+      id: 'addr-1',
+      name: user?.name || 'Aarav Sharma',
+      email: user?.email || 'aarav.sharma@gmail.com',
+      phone: '9876543210',
+      line1: 'Flat 402, Sunset Vista, 12th Main Road',
+      line2: 'Indiranagar',
+      city: 'Bengaluru',
+      state: 'Karnataka',
+      pincode: '560038',
+      isDefault: true
+    },
+    {
+      id: 'addr-2',
+      name: user?.name ? `${user.name} (Office)` : 'Isha Patel',
+      email: user?.email || 'isha.patel@gmail.com',
+      phone: '9123456789',
+      line1: '15, Sea Breeze Heights, Marine Drive',
+      line2: 'Backbay Reclamation',
+      city: 'Mumbai',
+      state: 'Maharashtra',
+      pincode: '400001',
+      isDefault: false
+    }
+  ])
+  const [selectedAddressId, setSelectedAddressId] = useState('addr-1')
+  const [isAddingNew, setIsAddingNew] = useState(false)
+  const [editingAddressId, setEditingAddressId] = useState(null)
+  
+  const [form, setForm] = useState({
+    name: '',
+    email: user?.email || '',
+    phone: '',
+    line1: '',
+    line2: '',
+    city: '',
+    state: '',
+    pincode: '',
+    gst: ''
+  })
+
+  const [pincodeLoading, setPincodeLoading] = useState(false)
+  const [pincodeMessage, setPincodeMessage] = useState('')
+  const [coupon, setCoupon] = useState('')
+  const [applied, setApplied] = useState(null)
   const [payment, setPayment] = useState('razorpay')
   const [placing, setPlacing] = useState(false)
   const [successOrder, setSuccessOrder] = useState(null)
+
+  // Auto-fill City & State on 6-digit Pincode input
+  useEffect(() => {
+    const pin = form.pincode
+    if (pin && pin.length === 6 && /^\d+$/.test(pin)) {
+      setPincodeLoading(true)
+      const timer = setTimeout(() => {
+        setPincodeLoading(false)
+        if (pin.startsWith('560')) {
+          setForm(f => ({ ...f, city: 'Bengaluru', state: 'Karnataka' }))
+          setPincodeMessage('Bengaluru, Karnataka')
+        } else if (pin.startsWith('400')) {
+          setForm(f => ({ ...f, city: 'Mumbai', state: 'Maharashtra' }))
+          setPincodeMessage('Mumbai, Maharashtra')
+        } else if (pin.startsWith('110')) {
+          setForm(f => ({ ...f, city: 'New Delhi', state: 'Delhi' }))
+          setPincodeMessage('New Delhi, Delhi')
+        } else if (pin.startsWith('600')) {
+          setForm(f => ({ ...f, city: 'Chennai', state: 'Tamil Nadu' }))
+          setPincodeMessage('Chennai, Tamil Nadu')
+        } else if (pin.startsWith('700')) {
+          setForm(f => ({ ...f, city: 'Kolkata', state: 'West Bengal' }))
+          setPincodeMessage('Kolkata, West Bengal')
+        } else if (pin.startsWith('500')) {
+          setForm(f => ({ ...f, city: 'Hyderabad', state: 'Telangana' }))
+          setPincodeMessage('Hyderabad, Telangana')
+        } else {
+          setPincodeMessage('Verified')
+        }
+      }, 400)
+      return () => clearTimeout(timer)
+    } else {
+      setPincodeMessage('')
+    }
+  }, [form.pincode])
+
+  const activeAddress = useMemo(() => {
+    if (selectedAddressId === 'new') {
+      return form
+    }
+    return addresses.find(a => a.id === selectedAddressId) || form
+  }, [selectedAddressId, addresses, form])
 
   const subtotal = cart.reduce((s, i) => s + i.price * i.qty, 0)
   const shipping = subtotal > 1499 ? 0 : 99
@@ -887,6 +975,62 @@ const CheckoutPage = () => {
     if (r.error) return toast.error(r.error)
     setApplied(r); toast.success(`${r.label} applied!`)
   }
+
+  const handleEditAddress = (addr, e) => {
+    e.stopPropagation()
+    setEditingAddressId(addr.id)
+    setForm({
+      name: addr.name,
+      email: addr.email,
+      phone: addr.phone,
+      line1: addr.line1,
+      line2: addr.line2 || '',
+      city: addr.city,
+      state: addr.state,
+      pincode: addr.pincode,
+      gst: addr.gst || ''
+    })
+    setSelectedAddressId('new')
+    setIsAddingNew(true)
+  }
+
+  const handleDeleteAddress = (id, e) => {
+    e.stopPropagation()
+    setAddresses(prev => prev.filter(a => a.id !== id))
+    if (selectedAddressId === id) {
+      setSelectedAddressId('new')
+    }
+    toast.success('Address deleted')
+  }
+
+  const handleSaveAddress = () => {
+    if (!form.name) return toast.error('Full name is required')
+    if (!form.email || !form.email.includes('@')) return toast.error('Valid email is required')
+    if (!form.phone || form.phone.length < 10) return toast.error('Valid phone number (min 10 digits) is required')
+    if (!form.line1) return toast.error('Address Line 1 is required')
+    if (!form.city) return toast.error('City is required')
+    if (!form.state) return toast.error('State is required')
+    if (!form.pincode || form.pincode.length !== 6) return toast.error('Pincode must be exactly 6 digits')
+
+    if (editingAddressId) {
+      setAddresses(prev => prev.map(a => a.id === editingAddressId ? { ...a, ...form } : a))
+      setSelectedAddressId(editingAddressId)
+      toast.success('Address updated')
+    } else {
+      const newId = 'addr-' + Date.now()
+      const newAddr = {
+        id: newId,
+        ...form,
+        isDefault: addresses.length === 0
+      }
+      setAddresses(prev => [...prev, newAddr])
+      setSelectedAddressId(newId)
+      toast.success('New address added')
+    }
+    setIsAddingNew(false)
+    setEditingAddressId(null)
+  }
+
   const placeRazorpayOrder = async () => {
     setPlacing(true);
 
@@ -910,10 +1054,10 @@ const CheckoutPage = () => {
 
       const orderPayload = {
         items: cart,
-        address: form,
-        email: form.email,
-        name: form.name,
-        phone: form.phone,
+        address: activeAddress,
+        email: activeAddress.email,
+        name: activeAddress.name,
+        phone: activeAddress.phone,
         payment: "razorpay",
         coupon: applied?.code || null,
         subtotal,
@@ -925,11 +1069,11 @@ const CheckoutPage = () => {
       await openRazorpayCheckout({
         order: data,
         prefill: {
-          name: form.name,
-          email: form.email,
-          contact: form.phone,
+          name: activeAddress.name,
+          email: activeAddress.email,
+          contact: activeAddress.phone,
         },
-        description: "Fashion Order",
+        description: "Velora Luxury Order",
         orderPayload,
         onVerified: (verifiedData) => {
           toast.success("Payment Successful");
@@ -948,173 +1092,628 @@ const CheckoutPage = () => {
       setPlacing(false);
     }
   };
+
   const placeOrder = async () => {
-  if (payment === "razorpay") {
-    return await placeRazorpayOrder();
-  }
+    if (payment === "razorpay") {
+      return await placeRazorpayOrder();
+    }
 
-  setPlacing(true);
+    setPlacing(true);
 
-  const body = {
-    items: cart,
-    address: form,
-    email: form.email,
-    name: form.name,
-    phone: form.phone,
-    payment,
-    coupon: applied?.code,
-    subtotal,
-    shipping,
-    discount,
-    total,
+    const body = {
+      items: cart,
+      address: activeAddress,
+      email: activeAddress.email,
+      name: activeAddress.name,
+      phone: activeAddress.phone,
+      payment,
+      coupon: applied?.code,
+      subtotal,
+      shipping,
+      discount,
+      total,
+    };
+
+    const r = await fetch("/api/checkout", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }).then((x) => x.json());
+
+    setPlacing(false);
+
+    if (r.error) return toast.error(r.error);
+
+    clearCart();
+    setSuccessOrder(r.order);
   };
-
-  const r = await fetch("/api/checkout", {
-    method: "POST",
-    body: JSON.stringify(body),
-  }).then((x) => x.json());
-
-  setPlacing(false);
-
-  if (r.error) return toast.error(r.error);
-
-  clearCart();
-  setSuccessOrder(r.order);
-};
 
   useEffect(() => { if (cart.length === 0 && !successOrder) setRoute({ view: 'cart' }) }, [cart, successOrder])
   if (cart.length === 0 && !successOrder) return null
-  const canProceed = step === 1 ? form.name && form.email && form.phone.length >= 10 && form.line1 && form.city && form.state && form.pincode.length === 6 : true
+
+  const canProceed = useMemo(() => {
+    if (step === 1) {
+      return (
+        activeAddress.name &&
+        activeAddress.email &&
+        activeAddress.phone &&
+        activeAddress.phone.length >= 10 &&
+        activeAddress.line1 &&
+        activeAddress.city &&
+        activeAddress.state &&
+        activeAddress.pincode &&
+        activeAddress.pincode.length === 6
+      )
+    }
+    return true
+  }, [step, activeAddress])
 
   return (
-    <div className="pt-8 pb-20 px-6 md:px-12 max-w-[1400px] mx-auto">
-      <h1 className="text-huge font-display font-bold silver-text mb-2">Checkout</h1>
-      <div className="flex items-center gap-3 text-sm mb-8 flex-wrap">
-        {['Address', 'Payment', 'Review'].map((s, i) => (
-          <div key={s} className="flex items-center gap-3">
-            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${step > i + 1 ? 'bg-blue-500' : step === i + 1 ? 'bg-white text-black' : 'glass'}`}>{step > i + 1 ? <Check className="w-4 h-4" /> : i + 1}</div>
-            <span className={step === i + 1 ? 'text-neutral-900 font-semibold' : 'text-neutral-500'}>{s}</span>
-            {i < 2 && <ChevronRight className="w-4 h-4 text-neutral-400" />}
-          </div>
-        ))}
+    <div className="pt-8 pb-24 px-4 md:px-12 max-w-[1500px] mx-auto">
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 pb-6 border-b border-black/5">
+        <div>
+          <h1 className="text-huge font-display font-bold silver-text mb-1">Secure Checkout</h1>
+          <p className="text-sm text-neutral-500">Every connection is encrypted with industrial 256-bit SSL protocols.</p>
+        </div>
+        <div className="flex items-center gap-3 text-sm mt-4 md:mt-0 flex-wrap">
+          {['Delivery Address', 'Payment Method', 'Review & Pay'].map((s, i) => (
+            <div key={s} className="flex items-center gap-3">
+              <button 
+                disabled={i + 1 > step && !canProceed}
+                onClick={() => setStep(i + 1)}
+                className={`flex items-center gap-2 transition text-xs tracking-wider uppercase font-semibold ${step === i + 1 ? 'text-blue-500 font-bold' : 'text-neutral-400 hover:text-neutral-600 disabled:opacity-40'}`}
+              >
+                <div className={`w-6 h-6 rounded-full flex items-center justify-center border text-[10px] ${step === i + 1 ? 'bg-blue-500 border-blue-500 text-white shadow-md shadow-blue-500/20' : 'border-neutral-300'}`}>
+                  {step > i + 1 ? <Check className="w-3 h-3 text-emerald-500" strokeWidth={3} /> : i + 1}
+                </div>
+                <span>{s}</span>
+              </button>
+              {i < 2 && <ChevronRight className="w-3 h-3 text-neutral-300" />}
+            </div>
+          ))}
+        </div>
       </div>
-      <div className="grid lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-2">
-          {step === 1 && (
-            <div className="glass rounded-2xl p-6 border border-black/10 space-y-4">
-              <h2 className="text-xl font-display font-bold">Shipping Address</h2>
-              <div className="grid md:grid-cols-2 gap-4">
-                <Input placeholder="Full name *" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} className="bg-black/[0.02] border-black/10" />
-                <Input placeholder="Email *" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} className="bg-black/[0.02] border-black/10" />
-                <Input placeholder="Phone *" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} className="bg-black/[0.02] border-black/10" />
-                <Input placeholder="Pincode *" value={form.pincode} maxLength={6} onChange={e => setForm({ ...form, pincode: e.target.value })} className="bg-black/[0.02] border-black/10" />
-              </div>
-              <Input placeholder="Address line 1 *" value={form.line1} onChange={e => setForm({ ...form, line1: e.target.value })} className="bg-black/[0.02] border-black/10" />
-              <Input placeholder="Address line 2" value={form.line2} onChange={e => setForm({ ...form, line2: e.target.value })} className="bg-black/[0.02] border-black/10" />
-              <div className="grid md:grid-cols-2 gap-4">
-                <Input placeholder="City *" value={form.city} onChange={e => setForm({ ...form, city: e.target.value })} className="bg-black/[0.02] border-black/10" />
-                <Input placeholder="State *" value={form.state} onChange={e => setForm({ ...form, state: e.target.value })} className="bg-black/[0.02] border-black/10" />
-              </div>
-              <Input placeholder="GSTIN (optional, for GST invoice)" value={form.gst} onChange={e => setForm({ ...form, gst: e.target.value })} className="bg-black/[0.02] border-black/10" />
-            </div>
-          )}
-          {step === 2 && (
-  <div className="space-y-4">
-    <div className="glass rounded-2xl p-6 border border-black/10 space-y-3">
-      <h2 className="text-xl font-display font-bold mb-4">
-        Payment Method
-      </h2>
 
-      {[
-        {
-          v: "razorpay",
-          l: "UPI / Cards / Net Banking / Wallets",
-          s: "Powered by Razorpay · 100% Secure",
-          icon: CreditCard,
-        },
-        {
-          v: "cod",
-          l: "Cash on Delivery",
-          s: "₹49 handling fee applies",
-          icon: Package,
-        },
-      ].map((o) => (
-        <button
-          key={o.v}
-          onClick={() => setPayment(o.v)}
-          className={`w-full flex items-center gap-4 p-4 rounded-xl border transition ${
-            payment === o.v
-              ? "border-blue-400 bg-blue-50/60"
-              : "border-black/10 hover:border-black/20"
-          }`}
-        >
-          <div className="w-10 h-10 rounded-lg bg-black/[0.02] flex items-center justify-center">
-            <o.icon className="w-5 h-5" />
-          </div>
+      <div className="grid lg:grid-cols-3 gap-8 items-start">
+        {/* Main Columns */}
+        <div className="lg:col-span-2 space-y-6">
+          <AnimatePresence mode="wait">
+            {/* Step 1: Delivery Address */}
+            {step === 1 && (
+              <motion.div 
+                initial={{ opacity: 0, y: 15 }} 
+                animate={{ opacity: 1, y: 0 }} 
+                exit={{ opacity: 0, y: -15 }}
+                className="space-y-4"
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <h2 className="text-xl font-display font-bold text-neutral-900">Select Delivery Address</h2>
+                  {!isAddingNew && (
+                    <Button 
+                      onClick={() => {
+                        setEditingAddressId(null)
+                        setForm({ name: '', email: user?.email || '', phone: '', line1: '', line2: '', city: '', state: '', pincode: '', gst: '' })
+                        setSelectedAddressId('new')
+                        setIsAddingNew(true)
+                      }}
+                      variant="outline" 
+                      className="rounded-full border-black/10 text-xs h-9 px-4 hover:bg-neutral-50"
+                    >
+                      <Plus className="w-3.5 h-3.5 mr-1" /> Add New
+                    </Button>
+                  )}
+                </div>
 
-          <div className="text-left flex-1">
-            <p className="font-medium">{o.l}</p>
-            <p className="text-xs text-neutral-500">{o.s}</p>
-          </div>
+                {/* Grid of Address Cards */}
+                {!isAddingNew ? (
+                  <div className="grid md:grid-cols-2 gap-4">
+                    {addresses.map((addr) => {
+                      const isSelected = selectedAddressId === addr.id
+                      return (
+                        <div 
+                          key={addr.id}
+                          onClick={() => setSelectedAddressId(addr.id)}
+                          className={`relative cursor-pointer transition-all duration-300 rounded-2xl p-5 border text-left flex flex-col justify-between h-[180px] ${
+                            isSelected 
+                              ? 'border-blue-500 bg-blue-50/20 shadow-lg shadow-blue-500/5 ring-1 ring-blue-500/30' 
+                              : 'border-black/10 hover:border-black/20 bg-white shadow-sm'
+                          }`}
+                        >
+                          <div>
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="font-semibold text-sm text-neutral-900">{addr.name}</span>
+                              {addr.isDefault && (
+                                <span className="text-[9px] tracking-wider uppercase font-bold bg-emerald-500/10 text-emerald-600 px-2 py-0.5 rounded-full">
+                                  Default
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-xs text-neutral-500 line-clamp-2 mb-1">{addr.line1}{addr.line2 ? `, ${addr.line2}` : ''}</p>
+                            <p className="text-xs text-neutral-500 mb-2">{addr.city}, {addr.state} - {addr.pincode}</p>
+                          </div>
+                          
+                          <div className="flex items-center justify-between border-t border-black/5 pt-3 mt-2">
+                            <span className="text-xs text-neutral-400 font-mono">{addr.phone}</span>
+                            <div className="flex gap-3 text-xs">
+                              <button 
+                                onClick={(e) => handleEditAddress(addr, e)} 
+                                className="text-blue-500 hover:text-blue-600 font-semibold"
+                              >
+                                Edit
+                              </button>
+                              {!addr.isDefault && (
+                                <button 
+                                  onClick={(e) => handleDeleteAddress(addr.id, e)} 
+                                  className="text-red-400 hover:text-red-500 font-semibold"
+                                >
+                                  Delete
+                                </button>
+                              )}
+                            </div>
+                          </div>
 
-          <div
-            className={`w-5 h-5 rounded-full border-2 ${
-              payment === o.v
-                ? "border-blue-400 bg-blue-400"
-                : "border-black/20"
-            }`}
-          />
-        </button>
-      ))}
-    </div>
-              <p className="text-xs text-neutral-500 flex items-center gap-2"><Shield className="w-3 h-3" /> All payments are 256-bit SSL secured.</p>
-            </div>
-          )}
-          {step === 3 && (
-            <div className="glass rounded-2xl p-6 border border-black/10">
-              <h2 className="text-xl font-display font-bold mb-4">Review Order</h2>
-              <div className="space-y-3 mb-6">
-                {cart.map(i => (
-                  <div key={i.key} className="flex gap-3 items-center pb-3 border-b border-black/5">
-                    <img src={i.image} className="w-16 h-20 rounded-lg object-cover" alt="" />
-                    <div className="flex-1"><p className="font-medium text-sm">{i.name}</p><p className="text-xs text-neutral-500">{i.size} · {i.color} · Qty {i.qty}</p></div>
-                    <p className="font-medium">{fmt(i.price * i.qty)}</p>
+                          {/* Selected Check Indicator */}
+                          {isSelected && (
+                            <div className="absolute top-4 right-4 w-4 h-4 rounded-full bg-blue-500 flex items-center justify-center">
+                              <Check className="w-2.5 h-2.5 text-white" strokeWidth={3} />
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                    
+                    {/* Dashed Add Card */}
+                    <div 
+                      onClick={() => {
+                        setEditingAddressId(null)
+                        setForm({ name: '', email: user?.email || '', phone: '', line1: '', line2: '', city: '', state: '', pincode: '', gst: '' })
+                        setSelectedAddressId('new')
+                        setIsAddingNew(true)
+                      }}
+                      className="border-2 border-dashed border-black/10 hover:border-black/20 rounded-2xl p-5 flex flex-col items-center justify-center text-center h-[180px] cursor-pointer transition hover:bg-neutral-50"
+                    >
+                      <div className="w-10 h-10 rounded-full bg-neutral-100 flex items-center justify-center mb-2">
+                        <Plus className="w-5 h-5 text-neutral-400" />
+                      </div>
+                      <p className="text-sm font-semibold text-neutral-700">Add New Shipping Address</p>
+                      <p className="text-xs text-neutral-400 mt-1">For delivery anywhere in India</p>
+                    </div>
                   </div>
-                ))}
-              </div>
-              <div className="text-sm space-y-1 text-neutral-700 mb-6">
-                <p><b className="text-neutral-900">Deliver to:</b> {form.name}, {form.line1}, {form.city}, {form.state} - {form.pincode}</p>
-                <p><b className="text-neutral-900">Payment:</b> {payment.toUpperCase()}</p>
-              </div>
-            </div>
-          )}
-          <div className="flex gap-3 mt-6">
-            {step > 1 && <Button onClick={() => setStep(step - 1)} variant="outline" className="rounded-full border-black/15">Back</Button>}
+                ) : (
+                  // Address Form Slide-In
+                  <motion.div 
+                    initial={{ opacity: 0, height: 0 }} 
+                    animate={{ opacity: 1, height: 'auto' }} 
+                    exit={{ opacity: 0, height: 0 }}
+                    className="glass rounded-3xl p-6 border border-black/10 space-y-4 shadow-xl"
+                  >
+                    <h3 className="font-display font-semibold text-lg text-neutral-900">
+                      {editingAddressId ? 'Edit Delivery Address' : 'Add New Shipping Address'}
+                    </h3>
+                    <div className="grid md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-[10px] uppercase tracking-wider font-semibold text-neutral-500 mb-1 block">Full Name *</label>
+                        <Input placeholder="e.g. Shayan Akhtar" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} className="bg-black/[0.02] border-black/10 h-11" />
+                      </div>
+                      <div>
+                        <label className="text-[10px] uppercase tracking-wider font-semibold text-neutral-500 mb-1 block">Email Address *</label>
+                        <Input placeholder="e.g. shayan@example.com" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} className="bg-black/[0.02] border-black/10 h-11" />
+                      </div>
+                      <div>
+                        <label className="text-[10px] uppercase tracking-wider font-semibold text-neutral-500 mb-1 block">Mobile Number *</label>
+                        <Input placeholder="10-digit mobile number" value={form.phone} maxLength={12} onChange={e => setForm({ ...form, phone: e.target.value })} className="bg-black/[0.02] border-black/10 h-11" />
+                      </div>
+                      <div>
+                        <label className="text-[10px] uppercase tracking-wider font-semibold text-neutral-500 mb-1 block">Pincode (Auto-fills City/State) *</label>
+                        <div className="relative">
+                          <Input placeholder="6-digit PIN code" value={form.pincode} maxLength={6} onChange={e => setForm({ ...form, pincode: e.target.value })} className="bg-black/[0.02] border-black/10 h-11 pr-10" />
+                          {pincodeLoading && (
+                            <Loader2 className="w-4 h-4 animate-spin text-neutral-400 absolute right-3 top-3.5" />
+                          )}
+                          {pincodeMessage && !pincodeLoading && (
+                            <span className="absolute right-3 top-3.5 text-xs text-emerald-600 font-medium">✓ {pincodeMessage}</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] uppercase tracking-wider font-semibold text-neutral-500 mb-1 block">Street Address (Line 1) *</label>
+                      <Input placeholder="House/Flat No, Building Name, Street Name" value={form.line1} onChange={e => setForm({ ...form, line1: e.target.value })} className="bg-black/[0.02] border-black/10 h-11" />
+                    </div>
+                    <div>
+                      <label className="text-[10px] uppercase tracking-wider font-semibold text-neutral-500 mb-1 block">Landmark / Locality (Line 2)</label>
+                      <Input placeholder="Area, Landmark, Colony, Suite" value={form.line2} onChange={e => setForm({ ...form, line2: e.target.value })} className="bg-black/[0.02] border-black/10 h-11" />
+                    </div>
+
+                    <div className="grid md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-[10px] uppercase tracking-wider font-semibold text-neutral-500 mb-1 block">City *</label>
+                        <Input placeholder="Bengaluru" value={form.city} onChange={e => setForm({ ...form, city: e.target.value })} className="bg-black/[0.02] border-black/10 h-11" />
+                      </div>
+                      <div>
+                        <label className="text-[10px] uppercase tracking-wider font-semibold text-neutral-500 mb-1 block">State *</label>
+                        <Input placeholder="Karnataka" value={form.state} onChange={e => setForm({ ...form, state: e.target.value })} className="bg-black/[0.02] border-black/10 h-11" />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] uppercase tracking-wider font-semibold text-neutral-500 mb-1 block">GSTIN for Business Invoice (Optional)</label>
+                      <Input placeholder="29XXXXX0000X0Z0" value={form.gst} onChange={e => setForm({ ...form, gst: e.target.value })} className="bg-black/[0.02] border-black/10 h-11" />
+                    </div>
+
+                    <div className="flex justify-end gap-3 pt-3 border-t border-black/5">
+                      <Button 
+                        onClick={() => {
+                          setIsAddingNew(false)
+                          setEditingAddressId(null)
+                          setSelectedAddressId('addr-1')
+                        }} 
+                        variant="outline" 
+                        className="rounded-full border-black/10 h-11 px-6 hover:bg-neutral-50 text-neutral-600"
+                      >
+                        Cancel
+                      </Button>
+                      <Button 
+                        onClick={handleSaveAddress} 
+                        className="rounded-full bg-blue-500 text-white hover:bg-blue-400 h-11 px-8 shadow-lg shadow-blue-500/10"
+                      >
+                        Save & Use Address
+                      </Button>
+                    </div>
+                  </motion.div>
+                )}
+              </motion.div>
+            )}
+
+            {/* Step 2: Payment Method */}
+            {step === 2 && (
+              <motion.div 
+                initial={{ opacity: 0, y: 15 }} 
+                animate={{ opacity: 1, y: 0 }} 
+                exit={{ opacity: 0, y: -15 }}
+                className="space-y-4"
+              >
+                <h2 className="text-xl font-display font-bold text-neutral-900 mb-2">Select Payment Method</h2>
+                <div className="glass rounded-3xl p-6 border border-black/10 space-y-3 shadow-sm bg-white">
+                  {[
+                    {
+                      v: "razorpay",
+                      l: "Online Payments",
+                      s: "UPI, Credit/Debit Cards, Net Banking, and Wallets",
+                      badge: "Razorpay Secure",
+                      icon: CreditCard,
+                    },
+                    {
+                      v: "cod",
+                      l: "Cash on Delivery",
+                      s: "Pay with Cash or UPI upon physical package delivery",
+                      badge: "₹49 handling fee",
+                      icon: Package,
+                    },
+                  ].map((o) => {
+                    const isSelected = payment === o.v
+                    return (
+                      <button
+                        key={o.v}
+                        onClick={() => setPayment(o.v)}
+                        className={`w-full flex items-center gap-4 p-5 rounded-2xl border text-left transition-all duration-300 relative ${
+                          isSelected
+                            ? "border-blue-500 bg-blue-50/20 ring-1 ring-blue-500/30"
+                            : "border-black/10 hover:border-black/20 bg-white"
+                        }`}
+                      >
+                        <div className={`w-12 h-12 rounded-xl flex items-center justify-center transition-all ${
+                          isSelected ? 'bg-blue-500/10 text-blue-500' : 'bg-black/[0.03] text-neutral-500'
+                        }`}>
+                          <o.icon className="w-6 h-6" />
+                        </div>
+
+                        <div className="flex-1 pr-6">
+                          <div className="flex items-center gap-2 mb-0.5">
+                            <span className="font-semibold text-neutral-900 text-sm md:text-base">{o.l}</span>
+                            <span className="text-[10px] font-semibold bg-neutral-100 text-neutral-600 px-2 py-0.5 rounded-full border border-black/5">
+                              {o.badge}
+                            </span>
+                          </div>
+                          <p className="text-xs text-neutral-500">{o.s}</p>
+                        </div>
+
+                        <div
+                          className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-all ${
+                            isSelected
+                              ? "border-blue-500 bg-blue-500"
+                              : "border-black/20"
+                          }`}
+                        >
+                          {isSelected && <div className="w-2 h-2 rounded-full bg-white" />}
+                        </div>
+                      </button>
+                    )
+                  })}
+                </div>
+                
+                <div className="flex items-center gap-2 px-2 text-xs text-neutral-500">
+                  <Shield className="w-4 h-4 text-emerald-500" />
+                  <span>Payments are processed with 256-bit encryption. We never save card details.</span>
+                </div>
+              </motion.div>
+            )}
+
+            {/* Step 3: Review Order */}
+            {step === 3 && (
+              <motion.div 
+                initial={{ opacity: 0, y: 15 }} 
+                animate={{ opacity: 1, y: 0 }} 
+                exit={{ opacity: 0, y: -15 }}
+                className="space-y-4"
+              >
+                <div className="flex items-center justify-between">
+                  <h2 className="text-xl font-display font-bold text-neutral-900">Review Items & Bag</h2>
+                  <button onClick={() => setRoute({ view: 'cart' })} className="text-xs text-blue-500 hover:underline font-semibold">Modify Cart</button>
+                </div>
+
+                <div className="glass rounded-3xl p-6 border border-black/10 space-y-4 bg-white shadow-sm">
+                  {cart.map((item) => (
+                    <div key={item.key} className="flex gap-4 items-center pb-4 last:pb-0 border-b border-black/5 last:border-0">
+                      <img src={item.image} className="w-16 h-20 rounded-xl object-cover border border-black/5 flex-shrink-0" alt={item.name} />
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-sm text-neutral-900 truncate">{item.name}</p>
+                        <p className="text-xs text-neutral-500 mb-2">{item.size} · {item.color}</p>
+                        
+                        {/* Premium Inline Quantity Editor */}
+                        <div className="flex items-center gap-4">
+                          <div className="flex items-center border border-black/10 rounded-full h-8 overflow-hidden bg-black/[0.01]">
+                            <button 
+                              onClick={() => {
+                                if (item.qty > 1) {
+                                  updateCart(item.key, item.qty - 1)
+                                } else {
+                                  removeFromCart(item.key)
+                                  toast.success('Item removed')
+                                }
+                              }} 
+                              className="w-8 h-full flex items-center justify-center hover:bg-black/[0.05] transition"
+                            >
+                              <Minus className="w-3 h-3 text-neutral-600" />
+                            </button>
+                            <span className="w-8 text-center text-xs font-semibold text-neutral-800">{item.qty}</span>
+                            <button 
+                              onClick={() => updateCart(item.key, item.qty + 1)} 
+                              className="w-8 h-full flex items-center justify-center hover:bg-black/[0.05] transition"
+                            >
+                              <Plus className="w-3 h-3 text-neutral-600" />
+                            </button>
+                          </div>
+                          
+                          <button 
+                            onClick={() => {
+                              removeFromCart(item.key)
+                              toast.success('Item removed')
+                            }} 
+                            className="text-xs text-red-400 hover:text-red-500 transition-colors"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                      
+                      <div className="text-right">
+                        <p className="font-semibold text-sm text-neutral-900">{fmt(item.price * item.qty)}</p>
+                        <p className="text-[10px] text-neutral-400">{item.qty} × {fmt(item.price)}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Delivery details briefing */}
+                <div className="glass rounded-3xl p-5 border border-black/5 bg-neutral-50/50 grid md:grid-cols-2 gap-4">
+                  <div className="text-xs">
+                    <p className="text-[10px] uppercase tracking-wider font-bold text-neutral-400 mb-1">Delivering To</p>
+                    <p className="font-semibold text-neutral-800">{activeAddress.name}</p>
+                    <p className="text-neutral-500 line-clamp-1">{activeAddress.line1}, {activeAddress.city}</p>
+                    <p className="text-neutral-500">{activeAddress.state} - {activeAddress.pincode}</p>
+                  </div>
+                  <div className="text-xs">
+                    <p className="text-[10px] uppercase tracking-wider font-bold text-neutral-400 mb-1">Payment Selection</p>
+                    <p className="font-semibold text-neutral-800">
+                      {payment === 'razorpay' ? 'Secure Credit/Debit/UPI (Razorpay)' : 'Cash on Delivery (COD)'}
+                    </p>
+                    <p className="text-neutral-500 mt-1">Est. Delivery: 4-6 Days (Pan-India Express)</p>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Stepper Buttons (Back / Forward) */}
+          <div className="flex gap-3 pt-4">
+            {step > 1 && (
+              <Button 
+                onClick={() => setStep(step - 1)} 
+                variant="outline" 
+                className="rounded-full border-black/15 h-12 px-6"
+              >
+                Back
+              </Button>
+            )}
             {step < 3 ? (
-              <Button disabled={!canProceed} onClick={() => setStep(step + 1)} className="rounded-full bg-neutral-900 text-white hover:bg-blue-600 hover:text-white ml-auto">Continue <ArrowRight className="ml-2 w-4 h-4" /></Button>
+              <Button 
+                disabled={!canProceed} 
+                onClick={() => setStep(step + 1)} 
+                className="rounded-full bg-neutral-900 text-white hover:bg-blue-600 hover:text-white ml-auto h-12 px-8 shadow-lg transition"
+              >
+                Continue <ArrowRight className="ml-2 w-4 h-4" />
+              </Button>
             ) : (
-              <Button disabled={placing} onClick={placeOrder} className="rounded-full bg-blue-500 hover:bg-blue-400 text-white ml-auto h-12 px-8">{placing ? 'Placing order...' : `Place Order · ${fmt(total)}`}</Button>
+              <Button 
+                disabled={placing} 
+                onClick={placeOrder} 
+                className="rounded-full bg-blue-600 hover:bg-blue-500 text-white ml-auto h-12 px-10 shadow-lg shadow-blue-500/10 font-bold tracking-wide"
+              >
+                {placing ? (
+                  <span className="flex items-center gap-2">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Placing Secure Order...
+                  </span>
+                ) : payment === 'razorpay' ? (
+                  `Pay Securely · ${fmt(total)}`
+                ) : (
+                  `Confirm COD Order · ${fmt(total)}`
+                )}
+              </Button>
             )}
           </div>
         </div>
-        <div className="glass rounded-2xl p-6 h-fit border border-black/10">
-          <h3 className="font-display text-xl font-bold mb-4">Summary</h3>
-          <div className="glass rounded-xl p-3 mb-4 flex gap-2 border border-black/5">
-            <input value={coupon} onChange={e => setCoupon(e.target.value)} placeholder="Coupon code" className="flex-1 bg-transparent px-2 outline-none text-sm" />
-            <button onClick={applyCoupon} className="text-blue-400 text-sm font-medium hover:text-blue-300">Apply</button>
+
+        {/* Sticky Sidebar Column */}
+        <div className="lg:col-span-1">
+          <div className="glass rounded-3xl p-6 border border-black/10 sticky top-24 bg-white/70 shadow-lg backdrop-blur space-y-6">
+            <div>
+              <h3 className="font-display text-lg font-bold text-neutral-900">Order Summary</h3>
+              <p className="text-xs text-neutral-400">Indian Rupee pricing inclusive of taxes.</p>
+            </div>
+
+            {/* Coupons inside Sidebar */}
+            <div className="space-y-2">
+              <div className="flex gap-2 p-1.5 border border-black/10 rounded-full bg-black/[0.01]">
+                <input 
+                  value={coupon} 
+                  onChange={e => setCoupon(e.target.value)} 
+                  placeholder="Promo Code" 
+                  className="flex-1 bg-transparent px-3 outline-none text-xs" 
+                />
+                <button 
+                  onClick={applyCoupon} 
+                  className="bg-neutral-900 hover:bg-blue-500 text-white rounded-full text-xs font-semibold px-4 py-2 transition"
+                >
+                  Apply
+                </button>
+              </div>
+              <p className="text-[10px] text-neutral-500 px-1">
+                Try: <span className="font-mono bg-neutral-100 px-1 rounded">VELORA10</span>, <span className="font-mono bg-neutral-100 px-1 rounded">FUTURE20</span>
+              </p>
+              {applied && (
+                <div className="text-[11px] bg-emerald-50 text-emerald-700 px-3 py-2 rounded-xl flex items-center justify-between border border-emerald-200">
+                  <span className="font-medium">Coupon Applied: {applied.code}</span>
+                  <button onClick={() => setApplied(null)} className="underline font-bold text-red-500 ml-2">Remove</button>
+                </div>
+              )}
+            </div>
+
+            {/* Bill Details */}
+            <div className="space-y-3 pt-3 border-t border-black/5 text-xs text-neutral-600">
+              <div className="flex justify-between">
+                <span>Subtotal ({cart.reduce((s,i)=>s+i.qty, 0)} items)</span>
+                <span className="font-medium text-neutral-900">{fmt(subtotal)}</span>
+              </div>
+              
+              <div className="flex justify-between">
+                <span>Shipping Charges</span>
+                {shipping === 0 ? (
+                  <span className="font-bold text-emerald-600">FREE</span>
+                ) : (
+                  <span className="font-medium text-neutral-900">{fmt(shipping)}</span>
+                )}
+              </div>
+              
+              {discount > 0 && (
+                <div className="flex justify-between text-emerald-600 font-medium">
+                  <span>Coupon Discount ({applied?.code})</span>
+                  <span>-{fmt(discount)}</span>
+                </div>
+              )}
+
+              {payment === 'cod' && (
+                <div className="flex justify-between text-amber-700">
+                  <span>COD Handling Fee</span>
+                  <span>+₹49</span>
+                </div>
+              )}
+
+              <div className="flex justify-between text-[10px] text-neutral-400">
+                <span>GST (18% Included)</span>
+                <span>{fmt(Math.round((total - (payment === 'cod' ? 49 : 0)) * 0.18))}</span>
+              </div>
+            </div>
+
+            <div className="border-t border-black/10 pt-4">
+              <div className="flex justify-between items-baseline">
+                <span className="font-bold text-sm text-neutral-800">Grand Total</span>
+                <span className="text-2xl font-display font-bold silver-text text-blue-600">
+                  {fmt(total + (payment === 'cod' ? 49 : 0))}
+                </span>
+              </div>
+            </div>
+
+            {/* Trust assurances block */}
+            <div className="pt-4 border-t border-black/5 space-y-3">
+              <div className="flex items-center gap-2.5 text-neutral-600">
+                <div className="w-7 h-7 bg-blue-50 rounded-lg flex items-center justify-center flex-shrink-0 text-blue-500">
+                  <Shield className="w-4 h-4" />
+                </div>
+                <div className="text-left">
+                  <p className="text-[11px] font-semibold text-neutral-900 leading-none">100% Buyer Protection</p>
+                  <p className="text-[9px] text-neutral-400 mt-0.5">Secure payments with instant support</p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2.5 text-neutral-600">
+                <div className="w-7 h-7 bg-emerald-50 rounded-lg flex items-center justify-center flex-shrink-0 text-emerald-500">
+                  <RotateCcw className="w-4 h-4" />
+                </div>
+                <div className="text-left">
+                  <p className="text-[11px] font-semibold text-neutral-900 leading-none">Easy 15-Day Returns</p>
+                  <p className="text-[9px] text-neutral-400 mt-0.5">No-questions-asked refunds & sizes swap</p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2.5 text-neutral-600">
+                <div className="w-7 h-7 bg-indigo-50 rounded-lg flex items-center justify-center flex-shrink-0 text-indigo-500">
+                  <Truck className="w-4 h-4" />
+                </div>
+                <div className="text-left">
+                  <p className="text-[11px] font-semibold text-neutral-900 leading-none">Express Tracked Shipping</p>
+                  <p className="text-[9px] text-neutral-400 mt-0.5">Fulfilled by BlueDart, Delhivery & Bluedart</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Payment Secure Badge */}
+            <div className="p-3 bg-neutral-50 rounded-2xl border border-black/5 flex items-center justify-center gap-2">
+              <Shield className="w-4 h-4 text-neutral-400" />
+              <span className="text-[10px] uppercase font-bold tracking-wider text-neutral-500">
+                Razorpay Secured
+              </span>
+            </div>
           </div>
-          <p className="text-[10px] text-neutral-500 mb-4">Try: VELORA10, FUTURE20, FLAT500, FIRST15</p>
-          <div className="space-y-2 text-sm">
-            <div className="flex justify-between text-neutral-700"><span>Subtotal</span><span>{fmt(subtotal)}</span></div>
-            <div className="flex justify-between text-neutral-700"><span>Shipping</span><span>{shipping === 0 ? 'FREE' : fmt(shipping)}</span></div>
-            {discount > 0 && <div className="flex justify-between text-blue-400"><span>Discount ({applied.code})</span><span>-{fmt(discount)}</span></div>}
-          </div>
-          <div className="border-t border-black/10 my-4" />
-          <div className="flex justify-between font-bold text-lg"><span>Total</span><span className="silver-text">{fmt(total)}</span></div>
         </div>
       </div>
 
-
+      {/* Sticky Bottom Mobile Bar */}
+      {step === 3 && (
+        <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/90 backdrop-blur border-t border-black/10 flex items-center justify-between md:hidden z-40">
+          <div>
+            <p className="text-[10px] text-neutral-400 uppercase font-semibold">Grand Total</p>
+            <p className="text-xl font-bold font-display silver-text text-blue-600">
+              {fmt(total + (payment === 'cod' ? 49 : 0))}
+            </p>
+          </div>
+          <Button 
+            disabled={placing} 
+            onClick={placeOrder} 
+            className="rounded-full bg-blue-600 hover:bg-blue-500 text-white px-6 h-11 text-sm font-bold shadow-lg"
+          >
+            {placing ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : payment === 'razorpay' ? (
+              'Pay Securely'
+            ) : (
+              'Confirm Order'
+            )}
+          </Button>
+        </div>
+      )}
 
       <PaymentSuccessDialog order={successOrder} onClose={() => setSuccessOrder(null)} />
     </div>
